@@ -1,7 +1,13 @@
 import plotly.graph_objects as go
 import random
 import animation
-import numpy
+import numpy as np
+import os
+import matplotlib
+import matplotlib.pyplot as plt
+import elevation
+import richdem as rd
+
 
 ################################################
 ## VARIABLES ###################################
@@ -9,6 +15,13 @@ num_rounds = 1 # number of rounds in the simulation
 grid_size = 1000 # height and width of grid in meters (100 meters x 100 meters)
 num_trees = 1600 # number of trees in model
 num_neighbors = 3 # number of trees to change state
+
+# Terrain extents defined by south-west and north-east points
+# Currently for huntsville area, please change these to a selected forest later
+MIN_LON = -86.90567
+MIN_LAT = 34.53765
+MAX_LON = -86.41380
+MAX_LAT = 34.86531
 
 frames = [] # Frames of animation. A collection of grid info.
 
@@ -29,6 +42,26 @@ unburned  = "Green"
 burning   = "Red"
 burnedout = "Black"
 
+
+# Class used to handle any terrain requests
+class TerrainApi:
+    def __init__(self):
+        # download the terrain elevation data and clip to the specified boundaries
+        terrain_path = os.path.join(os.getcwd(), 'test-DEM.tif')
+        elevation.clip(bounds=(MIN_LON, MIN_LAT, MAX_LON, MAX_LAT), output=terrain_path)
+        self.terrain_data = rd.LoadGDAL(terrain_path)
+        # cache the sizes of the elevation database
+        self.lat_len = len(self.terrain_data)
+        self.lon_len = len(self.terrain_data[0])
+
+    # Get the height above sea level for the specified lat/lon
+    def get_terrain_altitude(self, latitude, longitude):
+        # find the correct index storing the elevation data
+        z1 = (latitude - MIN_LAT) / (MAX_LAT - MIN_LAT) * self.lat_len
+        z2 = (longitude - MIN_LON) / (MAX_LON - MIN_LON) * self.lon_len
+        # if time permits this should be changed to interpolate between points
+        return self.terrain_data[int(z1)][int(z2)]
+
 #####################
 ## GENERATE TREES ###
 # Generate tree x and y positions on startup
@@ -37,8 +70,8 @@ def GenerateTrees(grid_size, num_trees):
     # Generate a forest of trees at random positions.
     #trees_x = [random.randrange(0, grid_size) for i in range(num_trees)]
     #trees_y = [random.randrange(0, grid_size) for i in range(num_trees)]
-    trees_x = numpy.random.uniform(0,grid_size,num_trees)
-    trees_y = numpy.random.uniform(0,grid_size,num_trees)
+    trees_x = np.random.uniform(0,grid_size,num_trees)
+    trees_y = np.random.uniform(0,grid_size,num_trees)
     states  = [unburned for i in range (num_trees)]
 
     trees_x[1] = grid_size/2
