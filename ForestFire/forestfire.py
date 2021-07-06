@@ -23,6 +23,12 @@ MIN_LAT = 34.53765
 MAX_LON = -86.41380
 MAX_LAT = 34.86531
 
+# Constants used to calculate the probability of ignition due to elevation and wind.
+C1 = np.float(0.045)
+C2 = np.float(0.131)
+A = np.float(0.078)
+
+
 frames = [] # Frames of animation. A collection of grid info.
 
 trees  = {} # x, y coordinate of each tree
@@ -61,6 +67,22 @@ class TerrainApi:
         z2 = (longitude - MIN_LON) / (MAX_LON - MIN_LON) * self.lon_len
         # if time permits this should be changed to interpolate between points
         return self.terrain_data[int(z1)][int(z2)]
+
+
+# probability of ignition due to wind
+# speed is wind speed in m/s
+# wind_angle is direction of wind in radians
+# fire_angle is direction fire is traveling (angle between burning and unburned tress) in radians
+def probability_wind(speed, wind_angle, fire_angle):
+    return np.exp(C1 * speed) * np.exp(speed * C2 * (np.cos(wind_angle - fire_angle) - 1))
+
+
+# probability of ignition  due to elevation
+# e1 is height of the burning tree, e2 is the height of the unburned tree in meters
+# dist is the distance between the trees in meters
+def probability_elevation(e1, e2, dist):
+    return np.exp(A * np.arctan((e1 - e2)/dist))
+
 
 #####################
 ## GENERATE TREES ###
