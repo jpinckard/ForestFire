@@ -1,4 +1,5 @@
 import plotly.graph_objects as go
+import plotly.express as px
 import random 
 import animation
 import math
@@ -13,18 +14,15 @@ import pandas as pd
 
 ################################################
 ## VARIABLES ###################################
-num_rounds = 1    # number of rounds in the simulation
-grid_width = 1000  # height and width of grid in meters (100 meters x 100 meters)
-grid_height= 1000 # width of the grid in meters
-num_trees = 100  # number of trees in model
-num_neighbors = 3 # number of trees to change state
+grid_width = 50 # height and width of grid in meters (100 meters x 100 meters)
+grid_height= 50 # width of the grid in meters
 
 r_inner = 15
 r_outer = 35
 a = 0.25
 b = 0.05
 min_sep = 4
-time=120 # simulation length
+time=20 # simulation length
 
 dist = 3 # distance between cells to check
 
@@ -122,69 +120,11 @@ def InitGridForest(grid_width, grid_height):
 
     return trees
 
-############################
-## PROBABILITY TO IGNITE ###
-# Calculates probability of each tree igniting each other tree.
-# This probability based on distance, thus does not change.
-def InitPignite(trees, num_trees, a, r_inner, r_outer):
-
-    N = num_trees-1
-
-    p_ignite = np.empty([N, N]) # Creates an NxN array to hold all the tree probs
-    
-    for i in range (N):
-        for j in range (N):
-            dist_ij = Distance(trees[i], trees[j])
-            if (dist_ij >= r_outer):
-                p_ignite[i, j] = 0
-            elif (dist_ij <= r_inner):
-                p_ignite[i, j] = a
-            else:
-                p_ignite[i, j] = a * (1 - ((dist_ij - r_inner)/(r_outer - r_inner) ))
-
-    return p_ignite
-
-
-############################
-## BURN FOREST #############
-# Simulates forest fire using SIR model with spatial ignition probability.
-def BurnForest(trees, num_trees, grid_width, grid_height, time, a, b, p_ignite, trial_num):
-    i=0
-    burningCount   = 0
-    burnedoutCount = 0
-    
-    for i in range (time):
-        nextTrees = trees
-        j=0
-        for y, row in enumerate (trees):
-            for x, col in enumerate (row):
-                if (trees[y][x][1] == burning ):
-                    if (np.random.uniform(0,1,1)[0] < b):
-                        nextTrees[y][x][1] = burnedout
-                        burnedoutCount += 1
-                        burningCount -= 1
-                elif (trees[y][x][1] == unburned ):
-                    Q=1
-                    k=0
-                    for u, row in enumerate (trees):
-                       for w, col in enumerate (row):
-                        if (trees[u][w][1] == burning ):
-                            Q = Q * (1-p_ignite[u, w])
-                    if (np.random.uniform(0,1,1)[0] >= Q):
-                        trees[y][x][1] = burning
-                        burningCount += 1
-
-        trees = nextTrees
-        if (i % 3 == 0):
-            DrawFigure(trees)
-
-    #results =[num_trees - burningCount - burnedoutCount, burningCount, burnedoutCount]
-    return nextTrees
 
 ############################
 ## JOY BURN FOREST #############
 # Simulates forest fire using SIR model with spatial ignition probability.
-def BurnForest(trees, num_trees, grid_width, grid_height, dist, time):
+def BurnForest(trees, grid_width, grid_height, dist, time):
 
     x = int(np.floor(grid_width/2))
     y = int(np.floor(grid_height/2))
@@ -193,67 +133,42 @@ def BurnForest(trees, num_trees, grid_width, grid_height, dist, time):
     burnt_trees = [[0,0]] # list of indexes of burning trees from list 'trees'. Initially populated with the first burning tree.
     turns = [[0, burnt_trees, burning_trees]] # A record of the changes in tree state for each turn.
 
-    
 
     # Burn over time
     for turn in range (time):
-
-        print ("Turn: ", turn)
-        print ("Burning trees", burning_trees)
-        print ("Length burning trees: ", len(burning_trees))
-
+        
         burning_trees_len = len(burning_trees)
-
-        if (len(burning_trees) <= 0):
-            break
-
-
-
-        #print ("Burning trees", burning_trees)
+        new_burnt_trees = []
         
         # Loop through all burning trees
         for j in range(burning_trees_len):
 
-            print ("j", j)
-
             tree = burning_trees[j]
-
-            #print (tree)
 
             # Get burnt out trees
             if (np.random.uniform(0,1,1)[0] < b):                
                 trees[tree[1], tree[0]][1] = burnedout
-                burning_trees.remove(tree) # might have to change the syntax of this
+                new_burnt_trees.append(tree)
                 burnt_trees.append(tree)
 
             # Check neighbors for ignition 
-            for i in range (-dist, dist):
+            for i in range (-dist, dist+1):
+                for k in range (-dist, dist+1):
+                    x = tree[0] + i
+                    y = tree[1] + k
+                    if (x < grid_width and y < grid_height and TryIgnite(trees[y][x])):
+                        burning_trees.append([x, y])
+                        trees[y][x][1] = burning
 
-                print ("Burning tree num", j)
+        # Remove burning trees from list
+        for burnt_tree in new_burnt_trees:
+            burning_trees.remove(burnt_tree)
+            
+        turns.append([turn, burnt_trees, burning_trees])
 
-                # Get neighbors along X and Y axis
-                if (i != 0):
-                    neighbor_x = [x+i, y]
-                    neighbor_y = [x, y+i]
-                    neighbor_d = [x+i, y+i] # along the diagonal
+        DrawGrid(trees)
 
-                # print ("Tree", trees[neighbor_x[1]][neighbor_x[0]][1] == unburned)
-
-                # Check ignition of those neighbors
-                if (TryIgnite(trees[neighbor_x[1]][neighbor_x[0]])):
-                    burning_trees.append(neighbor_x)
-                    trees[neighbor_x[1]][neighbor_x[0]][1] = burning
-                    print("...")
-                    
-                if (TryIgnite(trees[neighbor_y[1]][neighbor_y[0]])):
-                    burning_trees.append(neighbor_y)
-                    trees[neighbor_y[1]][neighbor_y[0]][1] = burning
-                    
-                if (TryIgnite(trees[neighbor_d[1]][neighbor_d[0]])):
-                    burning_trees.append(neighbor_d)
-                    trees[neighbor_d[1]][neighbor_d[0]][1] = burning
-
-        turns.append([turn, burnt_trees, burning_trees])                
+    return turns
                 
 
 ############################
@@ -261,37 +176,27 @@ def BurnForest(trees, num_trees, grid_width, grid_height, dist, time):
 # Checks ignition probability of two trees.
 def TryIgnite(tree):
     if (tree[1] == unburned and random.randint(0, 1) == 1):
-        print("True This ran")
         return True
-    print ("False")
     return False
 
-################################################
-## FUNCTIONS ###################################
+##################
+## DRAW GRID #####
+def DrawGrid(trees):
+    print("draw grid")
+    for y, row in enumerate (trees):
+        line = ""
+        for x, col in enumerate (row):
+            line = line + str(int(trees[y][x][1])) + " "
+        print(line)
+        
+
 ##########
 ## MAIN ##
 def Main():
     trees = InitGridForest(grid_width, grid_height)
-    
-    #p_ignite = InitPignite(trees, num_trees, a, r_inner, r_outer)
-    burn_forest = BurnForest(trees, num_trees, grid_width, grid_height, dist, time)
-    #print(burn_forest)
+    burn_forest = BurnForest(trees, grid_width, grid_height, dist, time)
+    DrawGrid(trees)
     #output = pd.DataFrame(burn_forest).to_csv("C:/Users/jpinckard/Documents/CS595_Summer2021_MikelPetty/ForestFire/results.csv")
-
-
-##################
-## DRAW FIGURE ###
-def DrawFigure(trees):
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=trees[0:num_trees, TREES_X], y=trees[0:num_trees, TREES_Y],
-        name="Forest Fire Simulation",
-        mode="markers",
-        marker_color=trees[0:num_trees, TREES_STATE]
-    ))
-    
-    fig.show()
 
 
 ################################################
