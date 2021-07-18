@@ -1,20 +1,30 @@
 import plotly.graph_objects as go
-import random
+import plotly.express as px
+import random 
 import animation
+import math
 import numpy as np
 import os
 import matplotlib
 import matplotlib.pyplot as plt
 import elevation
 import richdem as rd
+import pandas as pd
 
 
 ################################################
 ## VARIABLES ###################################
-num_rounds = 1 # number of rounds in the simulation
-grid_size = 1000 # height and width of grid in meters (100 meters x 100 meters)
-num_trees = 1600 # number of trees in model
-num_neighbors = 3 # number of trees to change state
+grid_width = 50 # height and width of grid in meters (100 meters x 100 meters)
+grid_height= 50 # width of the grid in meters
+
+r_inner = 15
+r_outer = 35
+a = 0.25
+b = 0.05
+min_sep = 4
+time=20 # simulation length
+
+dist = 3 # distance between cells to check
 
 # Terrain extents defined by south-west and north-east points
 # Currently for huntsville area, please change these to a selected forest later
@@ -23,31 +33,30 @@ MIN_LAT = 34.53765
 MAX_LON = -86.41380
 MAX_LAT = 34.86531
 
+
+# For converting cell positions to latitude and longitude.
+area_width  = MAX_LAT - MIN_LAT
+area_height = MAX_LON - MIN_LON
+
+x_scale = grid_width  / area_width
+y_scale = grid_height / area_height
+
 # Constants used to calculate the probability of ignition due to elevation and wind.
-C1 = np.float(0.045)
-C2 = np.float(0.131)
-A = np.float(0.078)
+C1 = float(0.045)
+C2 = float(0.131)
+A  = float(0.078)
 
+trees    = [] # x, y coordinate of each tree
+p_ignite = []
 
-frames = [] # Frames of animation. A collection of grid info.
+colors = ["Black", "Red", "Green"]
+unburned  = 2
+burning   = 1
+burnedout = 0
 
-trees  = {} # x, y coordinate of each tree
-
-############
-## COLORS ##
-green = "Green"
-red   = "Red"
-black = "Black"
-
-unburned  = 3
-burning   = 2
-burnedout = 1
-
-# FIXME
-unburned  = "Green"
-burning   = "Red"
-burnedout = "Black"
-
+TREES_X = 0 # Position of x variable in trees array
+TREES_Y = 1 # position of y variable in trees array
+TREES_STATE  = 2 # position of states variable in trees array
 
 # Class used to handle any terrain requests
 class TerrainApi:
@@ -83,137 +92,125 @@ def probability_wind(speed, wind_angle, fire_angle):
 def probability_elevation(e1, e2, dist):
     return np.exp(A * np.arctan((e1 - e2)/dist))
 
+# probability of ignition due to distance
+def GetDistance(tree1_x, tree1_y, tree2_x, tree2_y):
+    pos1 = GetGeoPos(tree1_x, tree1_y)
+    pos2 = GetGeoPos(tree2_x, tree2_y)
+    tree1_x = pos1[0]
+    tree2_y = pos1[1]
+    tree2_x = pos2[0]
+    tree2_y = pos2[1]
+    dist = math.sqrt((tree2_x - tree1_x)**2 + (tree2_y-tree1_y)**2)
+#    return
 
-#####################
-## GENERATE TREES ###
-# Generate tree x and y positions on startup
-def GenerateTrees(grid_size, num_trees):
+# Gets grid X, Y positions and converts to geographical X, Y positions.
+def GetGeoPos(x, y):
+    return [(x * x_scale) + MIN_LAT, (y * y_scale) + MIN_LON]
 
-    # Generate a forest of trees at random positions.
-    #trees_x = [random.randrange(0, grid_size) for i in range(num_trees)]
-    #trees_y = [random.randrange(0, grid_size) for i in range(num_trees)]
-    trees_x = np.random.uniform(0,grid_size,num_trees)
-    trees_y = np.random.uniform(0,grid_size,num_trees)
-    states  = [unburned for i in range (num_trees)]
 
-    trees_x[1] = grid_size/2
-    trees_y[1] = grid_size/2
-    states[1]  = burning
+#############################
+## INITIALIZE GRID FOREST ###
+# Create the forest as a grid of trees.
+def InitGridForest(grid_width, grid_height):
+    
+    trees = np.empty((grid_width, grid_height, 2))
 
-    trees = {"trees_x": trees_x, "trees_y": trees_y, "state":states}#states} # all trees are initially unburned
+    #t = TerrainApi()
+
+    for y, row in enumerate (trees):
+        for x, col in enumerate (row):
+            pos = GetGeoPos(x, y)
+            #z = t.get_terrain_altitude(pos[0], pos[1])
+            trees[y][x] = [0, unburned]    
+
+
+    #z = TerrainAPI.get_terrain_altitude(grid_width/2, grid_height/2)
+    x = int(np.floor(grid_width/2))
+    y = int(np.floor(grid_height/2))
+    trees[y][x] = [0, burning] 
 
     return trees
 
 
-################################################
-## FUNCTIONS ###################################
+############################
+## JOY BURN FOREST #############
+# Simulates forest fire using SIR model with spatial ignition probability.
+def BurnForest(trees, grid_width, grid_height, dist, time):
+
+    x = int(np.floor(grid_width/2))
+    y = int(np.floor(grid_height/2))
+    
+    burning_trees = [[x, y]] # list of indexes of burning trees from list 'trees'. Initially populated with the first burning tree.
+    burnt_trees = [[0,0]] # list of indexes of burning trees from list 'trees'. Initially populated with the first burning tree.
+    turns = [[0, burnt_trees, burning_trees]] # A record of the changes in tree state for each turn.
+
+
+    # Burn over time
+    for turn in range (time):
+        
+        burning_trees_len = len(burning_trees)
+        new_burnt_trees = []
+        
+        # Loop through all burning trees
+        for j in range(burning_trees_len):
+
+            tree = burning_trees[j]
+
+            # Get burnt out trees
+            if (np.random.uniform(0,1,1)[0] < b):                
+                trees[tree[1], tree[0]][1] = burnedout
+                new_burnt_trees.append(tree)
+                burnt_trees.append(tree)
+
+            # Check neighbors for ignition 
+            for i in range (-dist, dist+1):
+                for k in range (-dist, dist+1):
+                    x = tree[0] + i
+                    y = tree[1] + k
+                    if (x < grid_width and y < grid_height and TryIgnite(trees[y][x], trees[tree[1], tree[0]], tree[0], tree[1], x, y)):
+                        burning_trees.append([x, y])
+                        trees[y][x][1] = burning
+
+        # Remove burning trees from list
+        for burnt_tree in new_burnt_trees:
+            burning_trees.remove(burnt_tree)
+            
+        turns.append([turn, burnt_trees, burning_trees])
+
+        DrawGrid(trees)
+
+    return turns
+                
+
+############################
+## TRY IGNITE ##############
+# Checks ignition probability of two trees.
+## FIX ME DISTANCE <- 
+def TryIgnite(unburned_tree, burning_tree, unburned_tree_x, unburned_tree_y, burned_tree_x, burned_tree_y):
+    if (unburned_tree[1] == unburned):# and random.randint(0, 1) == 1):
+        distance = GetDistance(unburned_tree_x, burned_tree_x, unburned_tree_y, burned_tree_y)
+        p_elev = probability_elevation(burning_tree[0], unburned_tree[1], distance)
+        return random.uniform(0, 1) > p_elev
+    return False
+
+##################
+## DRAW GRID #####
+def DrawGrid(trees):
+    print("Next Frame")
+    for y, row in enumerate (trees):
+        line = ""
+        for x, col in enumerate (row):
+            line = line + str(int(trees[y][x][1])) + " "
+        print(line)
+        
+
 ##########
 ## MAIN ##
 def Main():
-    trees = GenerateTrees(grid_size, num_trees)
-
-    for i in range (0, num_rounds):
-        ## DRAW UPDATES
-        DrawFigure(trees)
-        frames.append(go.Frame(data=[go.Scatter(x=[3, 4], y=[3, 4])], layout=go.Layout(title_text="End Title")))
-
-    animate(frames)
-
-
-##################
-## DRAW FIGURE ###
-def DrawFigure(trees):
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(
-        x=trees["trees_x"], y=trees["trees_y"],
-        name="Forest Fire Simulation",
-        mode="markers",
-        marker_color=trees["state"]
-    ))
-    
-    # Set options common to all traces with fig.update_traces
-    #fig.update_traces(mode='markers', marker_line_width=0, marker_size=10)
-    #fig.update_layout(title='Forest Fire Simulation',
-    #                  yaxis_zeroline=False,
-    #                  xaxis_zeroline=False)
-    
-    fig.show()
-
-#######################
-## GET MARKER COLOR ###
-def GetMarkerColor(state):
-    # print("state:" + state)
-    if   (state == unburned):
-        return green
-    elif (state == burning):
-        return red
-    elif (state == burnedout):
-        return black
-    return "Blue"
-
-#####################
-## GET ANIM FRAME ###
-def GetFrame():
-    return go.Frame(
-        data=[
-            go.Scatter(
-            x=trees["trees_x"], y=trees["trees_y"],
-            name="Forest Fire Simulation",
-            mode="markers",
-            marker_color=GetMarkerColor(trees["state"]))
-        ]
-    )
-
-
-################
-## SET TREES ###
-# Update tree state values.
-def SetTrees(trees):
-    trees = {"trees_x": trees.get("trees_x"), "trees_y": trees.get("trees_y"), "state":trees.get("state")} # all trees are initially green
-
-########################
-## CHANGE TREE STATE ###
-# Change the state of a tree to either red or black
-def ChangeState(state):
-    if (state == green):
-        return red
-    return black
-
-
-#######################
-## NEIGHBORS ##
-# Returns a list of n trees closest to the target tree.
-# tree = the tree to target
-# d = distance
-# FIXME
-def GetNeighbors(tree, trees, d):
-    neighbors = []
-
-    #for i in range (num_trees):
-     #   dist = GetDistance([trees[]])
-        ##
-        # FOR TESTING PURPOSES. FIX ME
-        #randomTree = random.randint(0, len(trees.get("state")))
-        ##
-  
-        #trees.get("state")[randomTree] = ChangeState(trees.get("state")[randomTree])
-
-        
-        
-      #  neighbors.append(tree)
-
-    # return neighbors
-
-##################
-## GET DISTANCE ##
-# Returns the distance between a pair of X,Y coordinates
-def GetDistance (tree1, tree2):
-    X1 = tree1[0]
-    X2 = tree2[0]
-    Y1 = tree1[1]
-    Y2 = tree2[1]
-    return(math.sqrt((X2 - X1)^2 + (Y2 - Y1)^2))
+    trees = InitGridForest(grid_width, grid_height)
+    burn_forest = BurnForest(trees, grid_width, grid_height, dist, time)
+    DrawGrid(trees)
+    #output = pd.DataFrame(burn_forest).to_csv("C:/Users/jpinckard/Documents/CS595_Summer2021_MikelPetty/ForestFire/results.csv")
 
 
 ################################################
