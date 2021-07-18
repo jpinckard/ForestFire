@@ -119,8 +119,8 @@ def Distance(tree1_x, tree1_y, tree2_x, tree2_y):
 # Create the forest as a grid of trees.
 def InitGridForest(grid_width, grid_height):
 
-    filename = "forset_fire.csv"
-    elevation_data = ElevationData(filename)
+    filename = "forest_fire.csv"
+    ed = ElevationData(filename)
     trees = np.empty((grid_width, grid_height, 2))
 
     #t = TerrainApi()
