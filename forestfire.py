@@ -82,16 +82,16 @@ class TerrainApi:
 
 class ElevationData:
     def __init__(self, filename):
-        global grid_height, grid_width
+        global grid_height, grid_width, x_scale, y_scale
         # Get the elevation data from the provided csv file.
         self.df = pd.read_csv(filename)
         # Ensure the grid width and height match the elevation data.
         # For reference, the grid height/width of the csv file is 1200 x 2280.
         grid_height, grid_width = self.df.shape
+        x_scale, y_scale = grid_width / area_width, grid_height / area_height
 
     # Todo: This should likely be defined similarly to get_terrain_altitude.
-    def get_elevation_data(self, tree):
-        x, y = tree[1], tree[0]
+    def get_elevation_data(self, x, y):
         return self.df.iat[x, y]
 
 
@@ -123,13 +123,10 @@ def InitGridForest(grid_width, grid_height):
     ed = ElevationData(filename)
     trees = np.empty((grid_width, grid_height, 2))
 
-    #t = TerrainApi()
-
     for y, row in enumerate (trees):
         for x, col in enumerate (row):
-            pos = [(x * x_scale) + MIN_LAT, (y * y_scale) + MIN_LON]
-            #z = t.get_terrain_altitude(pos[0], pos[1])
-            trees[y][x] = [0, unburned]    
+            z = ed.get_elevation_data(x, y)
+            trees[y][x] = [z, unburned]
 
 
     #z = TerrainAPI.get_terrain_altitude(grid_width/2, grid_height/2)
