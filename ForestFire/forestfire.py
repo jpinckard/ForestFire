@@ -35,11 +35,11 @@ MAX_LAT = 34.86531
 
 
 # For converting cell positions to latitude and longitude.
-area_width  = MAX_LAT - MIN_LAT
-area_height = MAX_LON - MIN_LON
+area_width  = MAX_LON - MIN_LON
+area_height = MAX_LAT - MIN_LAT
 
-x_scale = grid_width  / area_width
-y_scale = grid_height / area_height
+x_scale = area_width / grid_width
+y_scale = area_height / grid_height
 
 # Constants used to calculate the probability of ignition due to elevation and wind.
 C1 = float(0.045)
@@ -101,11 +101,11 @@ def GetDistance(tree1_x, tree1_y, tree2_x, tree2_y):
     tree2_x = pos2[0]
     tree2_y = pos2[1]
     dist = math.sqrt((tree2_x - tree1_x)**2 + (tree2_y-tree1_y)**2)
-#    return
+    return dist
 
 # Gets grid X, Y positions and converts to geographical X, Y positions.
 def GetGeoPos(x, y):
-    return [(x * x_scale) + MIN_LAT, (y * y_scale) + MIN_LON]
+    return [(x * x_scale) + MIN_LON, (y * y_scale) + MIN_LAT]
 
 
 #############################
@@ -115,16 +115,16 @@ def InitGridForest(grid_width, grid_height):
     
     trees = np.empty((grid_width, grid_height, 2))
 
-    #t = TerrainApi()
+    t = TerrainApi()
 
     for y, row in enumerate (trees):
         for x, col in enumerate (row):
             pos = GetGeoPos(x, y)
-            #z = t.get_terrain_altitude(pos[0], pos[1])
-            trees[y][x] = [0, unburned]    
+            z = t.get_terrain_altitude(pos[1], pos[0])
+            trees[y][x] = [0, unburned]
 
-
-    #z = TerrainAPI.get_terrain_altitude(grid_width/2, grid_height/2)
+    pos = GetGeoPos(grid_width/2, grid_height/2)
+    z = t.get_terrain_altitude(pos[1], pos[0])
     x = int(np.floor(grid_width/2))
     y = int(np.floor(grid_height/2))
     trees[y][x] = [0, burning] 
