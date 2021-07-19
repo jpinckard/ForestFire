@@ -78,6 +78,21 @@ class TerrainApi:
         return self.terrain_data[int(z1)][int(z2)]
 
 
+class ElevationData:
+    def __init__(self, filename):
+        global grid_height, grid_width
+        # Get the elevation data from the provided csv file.
+        self.df = pd.read_csv(filename)
+        # Ensure the grid width and height match the elevation data.
+        # For reference, the grid height/width of the csv file is 1200 x 2280.
+        grid_height, grid_width = self.df.shape
+
+    # Todo: This should likely be defined similarly to get_terrain_altitude.
+    def get_elevation_data(self, tree):
+        x, y = tree[1], tree[0]
+        return self.df.iat[x, y]
+
+
 # probability of ignition due to wind
 # speed is wind speed in m/s
 # wind_angle is direction of wind in radians
@@ -101,7 +116,9 @@ def Distance(tree1_x, tree1_y, tree2_x, tree2_y):
 ## INITIALIZE GRID FOREST ###
 # Create the forest as a grid of trees.
 def InitGridForest(grid_width, grid_height):
-    
+
+    filename = "forest_fire.csv"
+    ed = ElevationData(filename)
     trees = np.empty((grid_width, grid_height, 2))
 
     #t = TerrainApi()
