@@ -115,7 +115,7 @@ def Distance(tree1_x, tree1_y, tree2_x, tree2_y):
 #############################
 ## INITIALIZE GRID FOREST ###
 # Create the forest as a grid of trees.
-def InitGridForest(grid_width, grid_height):
+def InitGridForest():
 
     filename = "forest_fire.csv"
     ed = ElevationData(filename)
@@ -207,7 +207,7 @@ def DrawGrid(trees):
 ##########
 ## MAIN ##
 def Main():
-    trees = InitGridForest(grid_width, grid_height)
+    trees = InitGridForest()
     burn_forest = BurnForest(trees, grid_width, grid_height, dist, time)
     DrawGrid(trees)
     #output = pd.DataFrame(burn_forest).to_csv("C:/Users/jpinckard/Documents/CS595_Summer2021_MikelPetty/ForestFire/results.csv")
