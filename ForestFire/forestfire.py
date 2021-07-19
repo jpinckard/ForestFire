@@ -38,8 +38,8 @@ MAX_LAT = 34.86531
 area_width  = MAX_LAT - MIN_LAT
 area_height = MAX_LON - MIN_LON
 
-x_scale = grid_width  / area_width
-y_scale = grid_height / area_height
+X_SCALE = grid_width / area_width
+Y_SCALE = grid_height / area_height
 
 # Constants used to calculate the probability of ignition due to elevation and wind.
 C1 = float(0.045)
@@ -105,7 +105,7 @@ def GetDistance(tree1_x, tree1_y, tree2_x, tree2_y):
 
 # Gets grid X, Y positions and converts to geographical X, Y positions.
 def GetGeoPos(x, y):
-    return [(x * x_scale) + MIN_LAT, (y * y_scale) + MIN_LON]
+    return [(x * X_SCALE) + MIN_LAT, (y * Y_SCALE) + MIN_LON]
 
 
 #############################
