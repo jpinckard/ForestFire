@@ -1,30 +1,17 @@
-import plotly.graph_objects as go
-import plotly.express as px
-import random 
-import animation
+import random
 import math
 import numpy as np
-import os
-import matplotlib
-import matplotlib.pyplot as plt
-import elevation
-import richdem as rd
 import pandas as pd
 
-
 ################################################
-## VARIABLES ###################################
-grid_width = 50 # height and width of grid in meters (100 meters x 100 meters)
-grid_height= 50 # width of the grid in meters
-
+# VARIABLES ###################################
 r_inner = 15
 r_outer = 35
 a = 0.25
 b = 0.05
 min_sep = 4
-time=20 # simulation length
-
-dist = 3 # distance between cells to check
+time = 20  # simulation length
+cell_distance = 3  # distance between cells to check
 
 # Terrain extents defined by south-west and north-east points
 # Currently for huntsville area, please change these to a selected forest later
@@ -33,9 +20,15 @@ MIN_LAT = 34.53765
 MAX_LON = -86.41380
 MAX_LAT = 34.86531
 
+# Wind speed and direction.
+WIND_SPEED = 10  # m/s
+WIND_DIRECTION = 3 * np.pi / 2  # Radians, travelling westward by default
 
 # For converting cell positions to latitude and longitude.
-area_width  = MAX_LON - MIN_LON
+grid_width = 50  # height and width of grid in meters (100 meters x 100 meters)
+grid_height = 50  # width of the grid in meters
+
+area_width = MAX_LON - MIN_LON
 area_height = MAX_LAT - MIN_LAT
 
 x_scale = area_width / grid_width
@@ -44,175 +37,175 @@ y_scale = area_height / grid_height
 # Constants used to calculate the probability of ignition due to elevation and wind.
 C1 = float(0.045)
 C2 = float(0.131)
-A  = float(0.078)
+A = float(0.078)
 
-trees    = [] # x, y coordinate of each tree
-p_ignite = []
+trees = []  # x, y coordinate of each tree
+filename = "forest_fire.csv"
 
 colors = ["Black", "Red", "Green"]
-unburned  = 2
-burning   = 1
-burnedout = 0
 
-TREES_X = 0 # Position of x variable in trees array
-TREES_Y = 1 # position of y variable in trees array
-TREES_STATE  = 2 # position of states variable in trees array
+UNBURNED = 0
+BURNING = 1
+BURNT = 2
 
-# Class used to handle any terrain requests
-class TerrainApi:
+TREES_X = 0  # Position of x variable in trees array
+TREES_Y = 1  # position of y variable in trees array
+TREES_STATE = 2  # position of states variable in trees array
+
+
+class ElevationData:
     def __init__(self):
-        # download the terrain elevation data and clip to the specified boundaries
-        terrain_path = os.path.join(os.getcwd(), 'test-DEM.tif')
-        elevation.clip(bounds=(MIN_LON, MIN_LAT, MAX_LON, MAX_LAT), output=terrain_path)
-        self.terrain_data = rd.LoadGDAL(terrain_path)
-        # cache the sizes of the elevation database
-        self.lat_len = len(self.terrain_data)
-        self.lon_len = len(self.terrain_data[0])
+        global grid_height, grid_width, x_scale, y_scale
+        # Get the elevation data from the provided csv file.
+        self.df = pd.read_csv(filename)
+        # Ensure the grid width and height match the elevation data.
+        # For reference, the grid height/width of the csv file is 1200 x 2280.
+        grid_height, grid_width = self.df.shape
+        x_scale, y_scale = area_width / grid_width, area_height / grid_height
 
-    # Get the height above sea level for the specified lat/lon
-    def get_terrain_altitude(self, latitude, longitude):
-        # find the correct index storing the elevation data
-        z1 = (latitude - MIN_LAT) / (MAX_LAT - MIN_LAT) * self.lat_len
-        z2 = (longitude - MIN_LON) / (MAX_LON - MIN_LON) * self.lon_len
-        # if time permits this should be changed to interpolate between points
-        return self.terrain_data[int(z1)][int(z2)]
-
-
-# probability of ignition due to wind
-# speed is wind speed in m/s
-# wind_angle is direction of wind in radians
-# fire_angle is direction fire is traveling (angle between burning and unburned tress) in radians
-def probability_wind(speed, wind_angle, fire_angle):
-    return np.exp(C1 * speed) * np.exp(speed * C2 * (np.cos(wind_angle - fire_angle) - 1))
+    def get_altitude(self, x, y):
+        """
+        :param x: x-coordinate of grid
+        :param y: y-coordinate of grid
+        :return: altitude of xy-coordinate
+        """
+        # Todo: Sometimes throws an out-of-range error.
+        return self.df.iat[y, x]
 
 
-# probability of ignition  due to elevation
-# e1 is height of the burning tree, e2 is the height of the unburned tree in meters
-# dist is the distance between the trees in meters
-def probability_elevation(e1, e2, dist):
-    return np.exp(A * np.arctan((e1 - e2)/dist))
+def probability_wind(fire_angle):
+    """
+    :param fire_angle: direction fire is traveling (angle between burning and unburned tress) in radians
+    :return: probability of ignition due to wind
+    """
+    #print("fire angle is", fire_angle)
+    return np.exp(C1 * WIND_SPEED) * np.exp(WIND_SPEED * C2 * (np.cos(WIND_DIRECTION - fire_angle) - 1))
+
+
+def probability_elevation(e1, e2, distance):
+    """
+    :param e1: height of the burning tree in meters
+    :param e2: height of the unburned tree in meters
+    :param distance: distance between the trees in meters
+    :return: probability of ignition due to elevation
+    """
+    return np.exp(A * np.arctan((e1 - e2) / distance))
+
+
+def get_geo_pos(x, y):
+    """
+    :param x: x-coordinate of grid
+    :param y: y-coordinate of grid
+    :return: longitude-latitude coordinate pair
+    """
+    return x * x_scale + MIN_LON, y * y_scale + MIN_LAT
+
 
 # probability of ignition due to distance
-def GetDistance(tree1_x, tree1_y, tree2_x, tree2_y):
-    pos1 = GetGeoPos(tree1_x, tree1_y)
-    pos2 = GetGeoPos(tree2_x, tree2_y)
-    tree1_x = pos1[0]
-    tree2_y = pos1[1]
-    tree2_x = pos2[0]
-    tree2_y = pos2[1]
-    dist = math.sqrt((tree2_x - tree1_x)**2 + (tree2_y-tree1_y)**2)
-    return dist
-
-# Gets grid X, Y positions and converts to geographical X, Y positions.
-def GetGeoPos(x, y):
-    return [(x * x_scale) + MIN_LON, (y * y_scale) + MIN_LAT]
-
-
-#############################
-## INITIALIZE GRID FOREST ###
-# Create the forest as a grid of trees.
-def InitGridForest(grid_width, grid_height):
-    
-    trees = np.empty((grid_width, grid_height, 2))
-
-    t = TerrainApi()
-
-    for y, row in enumerate (trees):
-        for x, col in enumerate (row):
-            pos = GetGeoPos(x, y)
-            z = t.get_terrain_altitude(pos[1], pos[0])
-            trees[y][x] = [0, unburned]
-
-    pos = GetGeoPos(grid_width/2, grid_height/2)
-    z = t.get_terrain_altitude(pos[1], pos[0])
-    x = int(np.floor(grid_width/2))
-    y = int(np.floor(grid_height/2))
-    trees[y][x] = [0, burning] 
-
-    return trees
+def get_distance(tree1_x, tree1_y, tree2_x, tree2_y):
+    x1, y1 = get_geo_pos(tree1_x, tree1_y)
+    x2, y2 = get_geo_pos(tree2_x, tree2_y)
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
 
 ############################
-## JOY BURN FOREST #############
+# TRY IGNITE ##############
+# Checks ignition probability of two trees.
+def try_ignite(burning_pos, unburned_pos):
+    # and random.randint(0, 1) == 1):
+    burning_x, burning_y, burning_alt = burning_pos
+    unburned_x, unburned_y, unburned_alt = unburned_pos
+
+    # Slope is used to calculate angle -- however, x = 0 is undefined.
+    try:
+        slope = (unburned_y - burning_y) / (unburned_x - burning_x)
+    except ZeroDivisionError:
+        if unburned_y < burning_y:
+            slope = -np.pi / 2
+        else:
+            slope = np.pi / 2
+
+    fire_angle = np.arctan(slope)
+    distance = get_distance(unburned_x, burning_x, unburned_y, burning_y)
+
+    # Todo: Both probabilities are sometimes over one -- should they be normalized?
+    p_wind = probability_wind(fire_angle)
+    # print("p_wind is {}".format(p_wind))
+    p_elev = probability_elevation(burning_alt, unburned_alt, distance)
+    # print("p_elevation is {}".format(p_elev))
+
+    return random.uniform(0, 1) > p_wind or random.uniform(0, 1) > p_elev
+
+
+############################
+# JOY BURN FOREST #############
 # Simulates forest fire using SIR model with spatial ignition probability.
-def BurnForest(trees, grid_width, grid_height, dist, time):
+def burn_forest(ed):
+    global trees
+    first_x, first_y = grid_width // 2, grid_height // 2
 
-    x = int(np.floor(grid_width/2))
-    y = int(np.floor(grid_height/2))
-    
-    burning_trees = [[x, y]] # list of indexes of burning trees from list 'trees'. Initially populated with the first burning tree.
-    burnt_trees = [[0,0]] # list of indexes of burning trees from list 'trees'. Initially populated with the first burning tree.
-    turns = [[0, burnt_trees, burning_trees]] # A record of the changes in tree state for each turn.
-
+    burning_trees = [[first_x, first_y]]  # Burning trees from 'trees'; initially populated with the first burning tree.
+    burnt_trees = [[0, 0]]  # Burnt trees from 'trees'; initially populated with the first burnt tree.
+    tree_records = [[0, burnt_trees, burning_trees]]  # Records of the changes in tree state for each turn.
 
     # Burn over time
-    for turn in range (time):
-        
-        burning_trees_len = len(burning_trees)
-        new_burnt_trees = []
-        
+    for turn in range(time):
+        print("Turn {}:".format(turn))
         # Loop through all burning trees
-        for j in range(burning_trees_len):
+        for burning_tree in burning_trees:
+            burning_x, burning_y = burning_tree[0], burning_tree[1]
+            burning_pos = (burning_x, burning_y, ed.get_altitude(burning_x, burning_y))
+            # Did tree burn out?
+            if np.random.uniform(0, 1) < b:
+                trees[burning_y][burning_x] = BURNT
+                burnt_trees.append(burning_tree)
+                burning_trees.remove(burning_tree)
+                print("tree burnt out at ({}, {})".format(burning_x, burning_y))
+            # Check neighbors for ignition
+            for i in range(-cell_distance, cell_distance + 1):
+                for j in range(-cell_distance, cell_distance + 1):
+                    unburned_x, unburned_y = burning_x + i, burning_y + j
+                    unburned_pos = (unburned_x, unburned_y, ed.get_altitude(unburned_x, unburned_y))
+                    if unburned_x < grid_height and unburned_y < grid_width and \
+                            trees[unburned_y][unburned_x] == UNBURNED and \
+                            try_ignite(burning_pos, unburned_pos):
+                        trees[unburned_y][unburned_x] = BURNING
+                        burning_trees.append([unburned_x, unburned_y])
+                        print("burnt tree at ({}, {})".format(unburned_x, unburned_y))
 
-            tree = burning_trees[j]
+        # Update the records.
+        tree_records.append([turn, burnt_trees, burning_trees])
 
-            # Get burnt out trees
-            if (np.random.uniform(0,1,1)[0] < b):                
-                trees[tree[1], tree[0]][1] = burnedout
-                new_burnt_trees.append(tree)
-                burnt_trees.append(tree)
+        # Draw output.
+        # draw_grid(trees)
 
-            # Check neighbors for ignition 
-            for i in range (-dist, dist+1):
-                for k in range (-dist, dist+1):
-                    x = tree[0] + i
-                    y = tree[1] + k
-                    if (x < grid_width and y < grid_height and TryIgnite(trees[y][x], trees[tree[1], tree[0]], tree[0], tree[1], x, y)):
-                        burning_trees.append([x, y])
-                        trees[y][x][1] = burning
+    # Return records for later output.
+    return tree_records
 
-        # Remove burning trees from list
-        for burnt_tree in new_burnt_trees:
-            burning_trees.remove(burnt_tree)
-            
-        turns.append([turn, burnt_trees, burning_trees])
-
-        DrawGrid(trees)
-
-    return turns
-                
-
-############################
-## TRY IGNITE ##############
-# Checks ignition probability of two trees.
-## FIX ME DISTANCE <- 
-def TryIgnite(unburned_tree, burning_tree, unburned_tree_x, unburned_tree_y, burned_tree_x, burned_tree_y):
-    if (unburned_tree[1] == unburned):# and random.randint(0, 1) == 1):
-        distance = GetDistance(unburned_tree_x, burned_tree_x, unburned_tree_y, burned_tree_y)
-        p_elev = probability_elevation(burning_tree[0], unburned_tree[1], distance)
-        return random.uniform(0, 1) > p_elev
-    return False
 
 ##################
-## DRAW GRID #####
-def DrawGrid(trees):
+# DRAW GRID #####
+def draw_grid(trees):
     print("Next Frame")
-    for y, row in enumerate (trees):
+    for y, row in enumerate(trees):
         line = ""
-        for x, col in enumerate (row):
-            line = line + str(int(trees[y][x][1])) + " "
+        for x, col in enumerate(row):
+            line = line + str(int(trees[y][x])) + " "
         print(line)
-        
+
 
 ##########
-## MAIN ##
-def Main():
-    trees = InitGridForest(grid_width, grid_height)
-    burn_forest = BurnForest(trees, grid_width, grid_height, dist, time)
-    DrawGrid(trees)
-    #output = pd.DataFrame(burn_forest).to_csv("C:/Users/jpinckard/Documents/CS595_Summer2021_MikelPetty/ForestFire/results.csv")
+# MAIN ##
+def main():
+    global trees
+
+    ed = ElevationData()
+    trees = np.zeros((grid_width, grid_height))
+    burn_forest(ed)
+    # draw_grid(trees)
+    # pd.DataFrame(burn_forest).to_csv("results.csv")
 
 
 ################################################
-## LOOP ########################################
-Main()
+# LOOP ########################################
+main()
