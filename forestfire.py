@@ -114,6 +114,7 @@ def get_distance(tree1_x, tree1_y, tree2_x, tree2_y):
 ############################
 # TRY IGNITE ##############
 # Checks ignition probability of two trees.
+# Todo: Pass in cell distance and enhance p_ignite.
 def try_ignite(burning_pos, unburned_pos):
     # and random.randint(0, 1) == 1):
     burning_x, burning_y, burning_alt = burning_pos
@@ -137,8 +138,9 @@ def try_ignite(burning_pos, unburned_pos):
     # print("p_wind is {}".format(p_wind))
     p_elev = probability_elevation(burning_alt, unburned_alt, distance)
     # print("p_elevation is {}".format(p_elev))
+    p_ignite = p_elev * p_wind * a
 
-    return random.uniform(0, 1) > p_wind or random.uniform(0, 1) > p_elev
+    return random.uniform(0, 1) < p_ignite
 
 
 ############################
@@ -165,8 +167,9 @@ def burn_forest(ed):
                 trees[burning_y][burning_x] = BURNT
                 burnt_trees.append(burning_tree)
                 burning_trees.remove(burning_tree)
-                print("tree burnt out at ({}, {})".format(burning_x, burning_y))
+                #print("tree burnt out at ({}, {})".format(burning_x, burning_y))
             # Check neighbors for ignition
+            # Todo: As cell_distance is greater in magnitude, probability of ignition decreases.
             for i in range(-cell_distance, cell_distance + 1):
                 for j in range(-cell_distance, cell_distance + 1):
                     unburned_x, unburned_y = burning_x + i, burning_y + j
@@ -176,7 +179,7 @@ def burn_forest(ed):
                             try_ignite(burning_pos, unburned_pos):
                         trees[unburned_y][unburned_x] = BURNING
                         burning_trees.append([unburned_x, unburned_y])
-                        print("burnt tree at ({}, {})".format(unburned_x, unburned_y))
+                        #print("burnt tree at ({}, {})".format(unburned_x, unburned_y))
 
         # Update the records.
         tree_records.append([turn, burnt_trees, burning_trees])
@@ -213,4 +216,5 @@ def main():
 
 ################################################
 # LOOP ########################################
+#if __name__ == "__main__":
 main()
