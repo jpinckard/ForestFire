@@ -152,11 +152,11 @@ def burn_forest(ed):
 
     burning_trees = [[first_x, first_y]]  # Burning trees from 'trees'; initially populated with the first burning tree.
     burnt_trees = [[0, 0]]  # Burnt trees from 'trees'; initially populated with the first burnt tree.
-    tree_records = [[0, burnt_trees, burning_trees]]  # Records of the changes in tree state for each turn.
+    tree_records = [[0, first_x, first_y, BURNING]]  # Records of the changes in tree state for each turn.
 
     # Burn over time
     for turn in range(time):
-        print("Turn {}:".format(turn))
+        #print("Turn {}:".format(turn))
         # Loop through all burning trees
         for i  in range (len(burning_trees)):
             burning_tree = burning_trees[i]
@@ -167,6 +167,7 @@ def burn_forest(ed):
                 trees[burning_y][burning_x] = BURNT
                 burnt_trees.append(burning_tree)
                 burning_trees.remove(burning_tree)
+                tree_records.append([turn, burning_x, burning_y, BURNT])
                 #print("tree burnt out at ({}, {})".format(burning_x, burning_y))
             # Check neighbors for ignition
             # Todo: As cell_distance is greater in magnitude, probability of ignition decreases.
@@ -179,13 +180,9 @@ def burn_forest(ed):
                             try_ignite(burning_pos, unburned_pos):
                         trees[unburned_y][unburned_x] = BURNING
                         burning_trees.append([unburned_x, unburned_y])
+                        tree_records.append([turn, unburned_x, unburned_y, BURNING])
+
                         #print("burnt tree at ({}, {})".format(unburned_x, unburned_y))
-
-        # Update the records.
-        tree_records.append([turn, burnt_trees, burning_trees])
-
-        # Draw output.
-        # draw_grid(trees)
 
     # Return records for later output.
     return tree_records
@@ -209,8 +206,9 @@ def main():
 
     ed = ElevationData()
     trees = np.zeros((grid_width, grid_height))
-    burn_forest(ed)
-    draw_grid(trees)
+    trees = burn_forest(ed)
+    #draw_grid(trees)
+    np.savetxt("tree_output.csv", trees, fmt="%s", delimiter=",", header="Turn,  Tree X, Tree Y, State")
     # pd.DataFrame(burn_forest).to_csv("results.csv")
 
 
